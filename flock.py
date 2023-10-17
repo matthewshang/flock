@@ -28,6 +28,9 @@ import Utilities as util
 from statistics import mean
 from LocalSpace import LocalSpace
 from obstacle import EvertedSphereObstacle
+from jax_backend import StaticParams, OptimizedParams, State, init_state, next_state
+import jax.numpy as jnp
+from boid_draw import draw_boid
 
 class Flock:
 
@@ -38,14 +41,19 @@ class Flock:
                  max_simulation_steps = math.inf,
                  fixed_time_step = False,
                  fixed_fps = 60,
-                 seed = 1234567890):
+                 seed = 1234567890,
+                 use_jax = False):
         self.boid_count = boid_count              # Number of boids in Flock.
         self.sphere_radius = sphere_diameter / 2  # Radius of boid containment.
         self.sphere_center = sphere_center        # Center of boid containment.
         self.max_simulation_steps = max_simulation_steps # exit after n frames.
         self.fixed_time_step = fixed_time_step    # fixed time step vs realtime.
         self.fixed_fps = fixed_fps                # frame rate for fixed fps.
-        self.boids = []                # List of boids in flock.
+        self.use_jax = use_jax
+        if use_jax:
+            self.boids = None
+        else:
+            self.boids = []                # List of boids in flock.
         self.selected_boid_index = 0   # Index of boid tracked by camera.
         self.total_avoid_fail = 0      # count pass through containment sphere.
         self.cumulative_sep_fail = 0   # separation fail: a pair of boids touch.
@@ -62,11 +70,37 @@ class Flock:
                                                 self.sphere_center)]
         # If there is ever a need to have multiple Flock instances at the same
         # time, these steps should be reconsidered:
-        Draw.set_random_seeds(seed)
+        self.seed = seed
+        Draw.set_random_seeds(self.seed)
         self.setup()
+    
+    def run_jax(self):
+        Draw.start_visualizer(self.sphere_radius, self.sphere_center)
+        Flock.vis_pairs.add_pair(Draw.vis, self)  # Pairing for key handlers.
+        self.register_single_key_commands()
+        cfg = StaticParams(boid_count=self.boid_count, sphere_radius=self.sphere_radius)
+        self.boids = init_state(self.seed, cfg)
+        self.draw()
+        weights = OptimizedParams(
+            weight_forward  = 0.20,
+            weight_separate = 1.00,
+            weight_align    = 0.20,
+            weight_cohere   = 0.80,
+            weight_avoid    = 0.70)
 
-    # Run boids simulation. (Currently runs until stopped by user.)
-    def run(self):
+        while self.still_running():
+            if self.run_simulation_this_frame():
+                Draw.clear_scene()
+                self.boids = next_state(self.boids, weights, cfg)
+                # TODO(mshang): wrap_around
+                self.draw()
+                Draw.update_scene()
+                # TODO(mshang): log_stats
+                # self.update_fps() # TODO(mshang): dynamic frame rate
+        Draw.close_visualizer()
+        print('Exit at step:', Draw.frame_counter)
+
+    def run_py(self):
         draw = Draw() ## ?? currently unused but should contain draw state
         Draw.start_visualizer(self.sphere_radius, self.sphere_center)
         Flock.vis_pairs.add_pair(Draw.vis, self)  # Pairing for key handlers.
@@ -85,6 +119,14 @@ class Flock:
                 self.update_fps()
         Draw.close_visualizer()
         print('Exit at step:', Draw.frame_counter)
+
+
+    # Run boids simulation. (Currently runs until stopped by user.)
+    def run(self):
+        if self.use_jax:
+            self.run_jax()
+        else:
+            self.run_py()
 
     # Populate this flock by creating "count" boids with uniformly distributed
     # random positions inside a sphere with the given "radius" and "center".
@@ -106,10 +148,23 @@ class Flock:
 
     # Draw each boid in flock.
     def draw(self):
-        Draw.update_camera(self.selected_boid().position if
-                           self.tracking_camera else Vec3())
-        for boid in self.boids:
-            boid.draw()
+        if self.use_jax:
+            selected_position = Vec3.from_array(jnp.asarray(self.boids.positions[self.selected_boid_index]))
+            Draw.update_camera(selected_position if self.tracking_camera else Vec3())
+
+            ref_up = jnp.array([0, 1, 0])
+            sides = jnp.cross(ref_up, self.boids.forwards)
+            sides = sides / jnp.linalg.norm(sides, axis=1, keepdims=True)
+            ups = jnp.cross(self.boids.forwards, sides)
+            ups = ups / jnp.linalg.norm(ups, axis=1, keepdims=True)
+            for position, forward, side, up in zip(self.boids.positions, self.boids.forwards, sides, ups):
+                position, forward, side, up = map(lambda x: Vec3.from_array(jnp.asarray(x)), (position, forward, side, up))
+                draw_boid(position, forward, side, up, 0.5, Vec3.from_array([0.5, 0.6, 0.7]))
+        else:
+            Draw.update_camera(self.selected_boid().position if
+                            self.tracking_camera else Vec3())
+            for boid in self.boids:
+                boid.draw()
 
     # Fly each boid in flock for one simulation step. Consists of two sequential
     # steps to avoid artifacts from order of boids. First a "sense/plan" phase
@@ -340,5 +395,6 @@ if __name__ == "__main__":
 #    Flock(max_simulation_steps=200, fixed_time_step=True, fixed_fps=30).run()
 #    Flock(max_simulation_steps=200, fixed_time_step=True, seed=438538457).run()
 
-    Flock().run()
+    # Flock().run()
+    Flock(use_jax=True).run()
 #    Flock(2).run()
