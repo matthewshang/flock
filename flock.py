@@ -32,10 +32,11 @@ from obstacle import EvertedSphereObstacle
 class Flock:
 
     def __init__(self,
-                 boid_count = 200,
-                 sphere_diameter = 60,
+                 boid_count = 150,
+                 sphere_diameter = 100,
                  sphere_center = Vec3(),
                  max_simulation_steps = math.inf,
+                # max_simulation_steps = 100,
                  fixed_time_step = False,
                  fixed_fps = 60,
                  seed = 1234567890):
@@ -55,7 +56,7 @@ class Flock:
         self.tracking_camera = False
         self.wrap_vs_avoid = False
         self.avoid_blend_mode = True   # obstacle avoid: blend vs hard switch
-        self.min_time_to_collide = 0.8 # react to predicted impact (seconds)
+        self.min_time_to_collide = 1.0 # react to predicted impact (seconds)
         self.fps = util.Blender()
         # give Flock a default list of obstacles
         self.obstacles = [EvertedSphereObstacle(self.sphere_radius,

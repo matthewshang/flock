@@ -78,11 +78,11 @@ class Agent:
         # Adjust force by mass to get acceleration.
         acceleration = limit_steering_force / self.mass
         # Update dynamic and gerometric state...
-        self.update_speed_and_local_space(acceleration * time_step);
+        self.update_speed_and_local_space(acceleration, time_step);
 
     # Applies given acceleration to Agent's dynamic and geometric state.
-    def update_speed_and_local_space(self, acceleration):
-        new_velocity = self.velocity + acceleration
+    def update_speed_and_local_space(self, acceleration, time_step):
+        new_velocity = self.velocity + acceleration * time_step
         new_speed = new_velocity.length()
         
         # TODO 20230407 what if new_speed is zero?
@@ -93,10 +93,11 @@ class Agent:
         # Update geometric state when moving.
         if (self.speed > 0):
             # Reorthonormalize to correspond to new_forward
-            ref_up = self.up_reference(acceleration)
+            ref_up = self.up_reference(acceleration * time_step)
             new_side = ref_up.cross(new_forward).normalize()
             new_up = new_forward.cross(new_side).normalize()
-            new_position = self.position + (new_forward * self.speed)
+            clipped_velocity = new_forward * self.speed
+            new_position = self.position + clipped_velocity * time_step
             # Set new geometric state.
             new_ls = LocalSpace(new_side, new_up, new_forward, new_position)
             if new_ls.is_orthonormal():
@@ -123,9 +124,7 @@ class Agent:
         force = Vec3(0.1, 0.1, 1)
         time_step = 1 / 60
         ref_ls = LocalSpace()
-        ref_position = Vec3(0.007426106572325057,
-                            0.007426106572325057,
-                            0.07426106572325057)
+        ref_position = Vec3(0.00012376844287208429, 0.00012376844287208429, 0.0012376844287208429)
         assert a.side     == ref_ls.i, 'check initial side basis'
         assert a.up       == ref_ls.j, 'check initial up basis'
         assert a.forward  == ref_ls.k, 'check initial forward basis'
@@ -133,5 +132,5 @@ class Agent:
         assert a.velocity == Vec3(),   'check initial velocity'
         for i in range(5):
             a.steer(force, time_step)
-            #print(a.position())
+            # print(a.position)
         assert a.position == ref_position, 'position after 5 steer() calls'

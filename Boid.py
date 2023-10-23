@@ -25,8 +25,9 @@ class Boid(Agent):
 
     def __init__(self, flock=None):
         super().__init__()
-        self.max_speed = 0.3     # Speed upper limit (m/s)
-        self.max_force = 0.6     # Acceleration upper limit (m/s²)
+        self.max_speed = 20.0     # Speed upper limit (m/s)
+        self.max_force = 100.0     # Acceleration upper limit (m/s²)
+        self.response = 1.0
         self.speed = self.max_speed * 0.6
         self.body_radius = 0.5   # "assume a spherical boid" -- unit diameter
         self.flock = flock
@@ -50,14 +51,19 @@ class Boid(Agent):
         # Tunable parameters
         # (TODO maybe these should be on the class rather than instance?)
         # (TODO Also add max_speed, max_force, and Flock.min_time_to_collide?)
-        self.weight_forward  = 0.20
-        self.weight_separate = 1.00
-        self.weight_align    = 0.30
-        self.weight_cohere   = 0.60
-        self.weight_avoid    = 0.80
-        self.max_dist_separate = 4
-        self.max_dist_align    = 6
-        self.max_dist_cohere   = 100  # TODO 20231017 should this be ∞ or
+        # self.weight_forward  = 0.20
+        # self.weight_separate = 1.00
+        # self.weight_align    = 0.30
+        # self.weight_cohere   = 0.60
+        # self.weight_avoid    = 0.80
+        self.weight_forward  = 10.0
+        self.weight_separate = 30.0
+        self.weight_align    = 10.0
+        self.weight_cohere   = 12.0
+        self.weight_avoid    = 50.0
+        self.max_dist_separate = 3 
+        self.max_dist_align    = 3 
+        self.max_dist_cohere   = 3  # TODO 20231017 should this be ∞ or
                                       # should the behavior just ignore it?
         # TODO 20231019 are these 3 useful? Or should it just assume 1/dist is
         #               used to weight all neighbors in all three behaviors?
@@ -92,7 +98,7 @@ class Boid(Agent):
         a = self.weight_align * self.steer_to_align(neighbors)
         c = self.weight_cohere * self.steer_to_cohere(neighbors)
         o = self.weight_avoid * self.steer_to_avoid(time_step)
-        combined_steering = self.smoothed_steering(f + s + a + c + o)
+        combined_steering = self.response * self.smoothed_steering(f + s + a + c + o)
         self.annotation(s, a, c, o, combined_steering)
         return combined_steering
 
@@ -142,9 +148,10 @@ class Boid(Agent):
 
             neighbor_center += neighbor.position * weight
             total_weight += weight
-        neighbor_center /= total_weight
+        if total_weight > 0:
+            neighbor_center /= total_weight
         direction = neighbor_center - self.position
-        return direction.normalize()
+        return direction.normalize_or_0()
 
     ############################################################################
 
@@ -158,8 +165,8 @@ class Boid(Agent):
                 first_collision = collisions[0]
                 poi = first_collision.point_of_impact
                 normal = first_collision.normal_at_poi
-                pure_steering = normal.perpendicular_component(self.forward)
-                avoidance = pure_steering.normalize()
+                pure_steering = normal.perpendicular_component(self.forward).normalize()
+                avoidance = (pure_steering + normal * 2.0).normalize()
                 min_dist = self.speed * self.flock.min_time_to_collide
                 # Near enough to require avoidance steering?
                 near = min_dist > first_collision.dist_to_collision
@@ -173,9 +180,9 @@ class Boid(Agent):
 
                 if self.should_annotate():
                     self.avoid_obstacle_annotation(poi, near, weight)
-            if weight < 0.1:
-                avoidance = self.prototype_fly_away_from_obstacle()
-                weight = 1
+            # if weight < 0.1:
+            #     avoidance = self.prototype_fly_away_from_obstacle()
+            #     weight = 1
         return avoidance * weight
 
     # TODO 20231014 prototype_fly_away_from_obstacle
@@ -189,12 +196,14 @@ class Boid(Agent):
         offset_to_sphere_center = c - p
         distance_to_sphere_center = offset_to_sphere_center.length()
         dist_from_wall = r - distance_to_sphere_center
-        if dist_from_wall < r * 0.7:  # outer 75% of sphere
+        if dist_from_wall < r * 0.95:  # outer 95% of sphere
             normal = offset_to_sphere_center / distance_to_sphere_center
             if normal.dot(self.forward) < 0.9:
                 weight = (distance_to_sphere_center / r) ** 3
                 avoidance = normal * weight
-                # Draw.add_line_segment(p, p + avoidance, Vec3(1, 1, 0))
+
+                if self.should_annotate():
+                    Draw.add_line_segment(p, p + avoidance, Vec3(1, 1, 0))
         return avoidance
 
     # Draw a ray from Boid to its point of impact. Magenta for strong avoidance,
@@ -268,7 +277,7 @@ class Boid(Agent):
     # determined "raw" steering into a per-boid accumulator, then returns that
     # smoothed value to use for actually steering the boid this simulation step.
     def smoothed_steering(self, steer):
-        return self.steer_memory.blend(steer, 0.6) # Ad hoc smoothness param.
+        return self.steer_memory.blend(steer, 0.9) # Ad hoc smoothness param.
 
     # Draw this Boid's “body” -- currently an irregular tetrahedron.
     def draw(self, color=None):
@@ -292,7 +301,7 @@ class Boid(Agent):
     def should_annotate(self):
         return (self.flock.enable_annotation and
                 self.flock.tracking_camera and
-                (self.flock.selected_boid().position - self.position).length() < 3)
+                (self.flock.selected_boid().position - self.position).length() < 1.0)
 
     # Draw optional annotation of this Boid's current steering forces
     def annotation(self, separation, alignment, cohesion, avoidance, combined):
