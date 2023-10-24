@@ -63,7 +63,7 @@ class Flock:
         self.tracking_camera = False
         self.wrap_vs_avoid = False
         self.avoid_blend_mode = True   # obstacle avoid: blend vs hard switch
-        self.min_time_to_collide = 0.6 # react to predicted impact (seconds)
+        self.min_time_to_collide = 0.8 # react to predicted impact (seconds)
         self.fps = util.Blender()
         # give Flock a default list of obstacles
         self.obstacles = [EvertedSphereObstacle(self.sphere_radius,
@@ -190,6 +190,7 @@ class Flock:
             if distance_from_center > radius:
                 new_position = (center - bp).normalize() * radius * 0.95
                 boid.ls.p = new_position
+                boid.recompute_nearest_neighbors()
                 if not self.wrap_vs_avoid:
                     self.total_avoid_fail += 1
 
