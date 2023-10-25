@@ -134,7 +134,6 @@ def steer_to_align(position: jax.Array, forward: jax.Array,
         heading_offset = neighbor_forward - forward
         dist = length(neighbor_position - position)
         weight = 1 / (dist**config.exponent_align)
-        # print(dist)
         weight = weight * (1 - unit_sigmoid(dist / config.max_dist_align))
         return normalize_or_zero(heading_offset) * weight
 
