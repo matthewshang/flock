@@ -2,7 +2,7 @@ from flax import struct
 import functools
 import jax
 import jax.lax as lax
-import jax.numpy as jnp
+import jax.numpy as jp
 import math
 
 
@@ -54,18 +54,18 @@ def blend(v_old: jax.Array, v_new: jax.Array, old_weight: float) -> jax.Array:
 def unit_sigmoid(x: float) -> float:
 
     def logistic(x, k, L, x0):
-        x = jnp.maximum(x, -50)
-        return L / (1 + jnp.exp(-k * (x - x0)))
+        x = jp.maximum(x, -50)
+        return L / (1 + jp.exp(-k * (x - x0)))
 
     return logistic(x, 12, 1, 0.5)
 
 
 def length(v: jax.Array) -> float:
-    return jnp.linalg.norm(v)
+    return jp.linalg.norm(v)
 
 
 def lengths(vs: jax.Array, keepdims=True) -> jax.Array:
-    return jnp.linalg.norm(vs, axis=1, keepdims=keepdims)
+    return jp.linalg.norm(vs, axis=1, keepdims=keepdims)
 
 
 def normalize(v: jax.Array) -> jax.Array:
@@ -81,8 +81,8 @@ def random_unit_vector(key: jax.Array) -> jax.Array:
     key, subkey = jax.random.split(key)
     theta = jax.random.uniform(key, (1, )) * 2 * math.pi
     z = jax.random.uniform(subkey, (1, )) * 2 - 1
-    r = jnp.sqrt(1 - z**2)
-    return jnp.hstack([r * jnp.cos(theta), r * jnp.sin(theta), z])
+    r = jp.sqrt(1 - z**2)
+    return jp.hstack([r * jp.cos(theta), r * jp.sin(theta), z])
 
 
 def init_boid(config: Config, key: jax.Array) -> State:
@@ -94,8 +94,8 @@ def init_boid(config: Config, key: jax.Array) -> State:
     return State(position=position,
                  forward=forward,
                  speed=speed,
-                 steer_memory=jnp.zeros_like(position),
-                 up_memory=jnp.zeros_like(position))
+                 steer_memory=jp.zeros_like(position),
+                 up_memory=jp.zeros_like(position))
 
 
 def init_state(config: Config, key: jax.Array) -> State:
@@ -121,7 +121,7 @@ def steer_to_separate(position: jax.Array, neighbors: jax.Array,
         weight = weight * (1 - unit_sigmoid(dist / config.max_dist_separate))
         return offset * weight
 
-    direction = jnp.sum(jax.vmap(separation_force)(neighbors), axis=0)
+    direction = jp.sum(jax.vmap(separation_force)(neighbors), axis=0)
     return normalize_or_zero(direction)
 
 
@@ -137,7 +137,7 @@ def steer_to_align(position: jax.Array, forward: jax.Array,
         weight = weight * (1 - unit_sigmoid(dist / config.max_dist_align))
         return normalize_or_zero(heading_offset) * weight
 
-    direction = jnp.sum(jax.vmap(align_force,
+    direction = jp.sum(jax.vmap(align_force,
                                  in_axes=(0, 0))(neighbor_positions,
                                                  neighbor_forwards),
                         axis=0)
@@ -149,7 +149,7 @@ def steer_to_cohere(position: jax.Array, neighbors: jax.Array,
     dists = lengths(position - neighbors)
     weights = 1 / (dists**config.exponent_cohere)
     weights = weights * (1 - unit_sigmoid(dists / config.max_dist_cohere))
-    neighbor_center = jnp.sum(neighbors * weights, axis=0) / jnp.sum(weights)
+    neighbor_center = jp.sum(neighbors * weights, axis=0) / jp.sum(weights)
     return normalize_or_zero(neighbor_center - position)
 
 
@@ -157,7 +157,7 @@ def steer_to_avoid(position: jax.Array, config: Config) -> jax.Array:
     # TODO(mshang): do collision prediction instead of force field
     leng = length(position)
     dist = config.sphere_radius - leng
-    weight = jnp.where(dist < config.sphere_radius * 0.1, 1, 0)
+    weight = jp.where(dist < config.sphere_radius * 0.1, 1, 0)
     return -position / leng * weight
 
 
@@ -185,7 +185,7 @@ def steer(state: State, time_step: float, params: Params, config: Config,
 
     # Limit steering force
     magnitude = length(steering_force)
-    limit_steering_force = jnp.where(
+    limit_steering_force = jp.where(
         magnitude > config.max_force,
         steering_force / magnitude * config.max_force, steering_force)
     acceleration = limit_steering_force / config.mass
@@ -194,10 +194,10 @@ def steer(state: State, time_step: float, params: Params, config: Config,
     new_velocity = velocity + acceleration * time_step
     new_speed = length(new_velocity)
     new_forward = new_velocity / new_speed
-    clipped_speed = jnp.clip(new_speed, 0, config.max_speed)
+    clipped_speed = jp.clip(new_speed, 0, config.max_speed)
 
     up = normalize(
-        blend(boid.up_memory, acceleration + jnp.array([0, 0.01, 0]), 0.999))
+        blend(boid.up_memory, acceleration + jp.array([0, 0.01, 0]), 0.999))
     new_position = boid.position + new_forward * clipped_speed
 
     return State(position=new_position,
@@ -211,4 +211,4 @@ def next_state(params: Params, config: Config, time_step: float,
                state: State) -> State:
     step = jax.vmap(functools.partial(steer, state, time_step, params, config),
                     in_axes=(0, 0))
-    return step(state, jnp.arange(config.boid_count))
+    return step(state, jp.arange(config.boid_count))
