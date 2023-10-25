@@ -28,7 +28,9 @@ import Utilities as util
 from statistics import mean
 from LocalSpace import LocalSpace
 from obstacle import EvertedSphereObstacle
-from jax_backend import StaticParams, OptimizedParams, State, init_state, next_state
+import functools
+import jax
+import jax_flock as jf
 import jax.numpy as jnp
 from boid_draw import draw_boid
 
@@ -52,6 +54,7 @@ class Flock:
         self.use_jax = use_jax
         if use_jax:
             self.boids = None
+            self.colors = []
         else:
             self.boids = []                # List of boids in flock.
         self.selected_boid_index = 0   # Index of boid tracked by camera.
@@ -78,25 +81,33 @@ class Flock:
         Draw.start_visualizer(self.sphere_radius, self.sphere_center)
         Flock.vis_pairs.add_pair(Draw.vis, self)  # Pairing for key handlers.
         self.register_single_key_commands()
-        cfg = StaticParams(boid_count=self.boid_count, sphere_radius=self.sphere_radius)
-        self.boids = init_state(self.seed, cfg)
+        config = jf.Config(boid_count=self.boid_count, sphere_radius=self.sphere_radius)
+        self.boids = jf.init_state(config, jax.random.PRNGKey(self.seed))
+        self.colors = [Vec3.from_array([util.frandom2(0.5, 0.8) for i in range(3)]) for _ in range(self.boid_count)]
         self.draw()
-        weights = OptimizedParams(
+        params = jf.Params(
             weight_forward  = 0.20,
             weight_separate = 1.00,
-            weight_align    = 0.20,
-            weight_cohere   = 0.80,
-            weight_avoid    = 0.70)
+            weight_align    = 0.30,
+            weight_cohere   = 0.60,
+            weight_avoid    = 0.80)
+        
+        next_state = jax.jit(functools.partial(jf.next_state, params, config))
 
         while self.still_running():
             if self.run_simulation_this_frame():
                 Draw.clear_scene()
-                self.boids = next_state(self.boids, weights, cfg)
+                time_step = 1 / self.fixed_fps if self.fixed_time_step \
+                               else Draw.frame_duration
+                self.boids = next_state(time_step, self.boids)
                 # TODO(mshang): wrap_around
                 self.draw()
                 Draw.update_scene()
                 # TODO(mshang): log_stats
-                # self.update_fps() # TODO(mshang): dynamic frame rate
+                if not self.simulation_paused:
+                    Draw.measure_frame_duration()
+                self.update_fps()
+                print(self.fps.value)
         Draw.close_visualizer()
         print('Exit at step:', Draw.frame_counter)
 
@@ -149,17 +160,17 @@ class Flock:
     # Draw each boid in flock.
     def draw(self):
         if self.use_jax:
-            selected_position = Vec3.from_array(jnp.asarray(self.boids.positions[self.selected_boid_index]))
+            selected_position = Vec3.from_array(jnp.asarray(self.boids.position[self.selected_boid_index]))
             Draw.update_camera(selected_position if self.tracking_camera else Vec3())
 
-            ref_up = jnp.array([0, 1, 0])
-            sides = jnp.cross(ref_up, self.boids.forwards)
+            ups = self.boids.up_memory
+            sides = jnp.cross(ups, self.boids.forward)
             sides = sides / jnp.linalg.norm(sides, axis=1, keepdims=True)
-            ups = jnp.cross(self.boids.forwards, sides)
+            ups = jnp.cross(self.boids.forward, sides)
             ups = ups / jnp.linalg.norm(ups, axis=1, keepdims=True)
-            for position, forward, side, up in zip(self.boids.positions, self.boids.forwards, sides, ups):
+            for position, forward, side, up, color in zip(self.boids.position, self.boids.forward, sides, ups, self.colors):
                 position, forward, side, up = map(lambda x: Vec3.from_array(jnp.asarray(x)), (position, forward, side, up))
-                draw_boid(position, forward, side, up, 0.5, Vec3.from_array([0.5, 0.6, 0.7]))
+                draw_boid(position, forward, side, up, 0.5, color)
         else:
             Draw.update_camera(self.selected_boid().position if
                             self.tracking_camera else Vec3())
