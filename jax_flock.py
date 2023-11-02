@@ -5,25 +5,27 @@ import jax.lax as lax
 import jax.numpy as jp
 import math
 
+from jax.typing import ArrayLike
+
 
 @struct.dataclass
 class Config:
     boid_count: int
     sphere_radius: float
 
-    mass = 1.0
-    body_radius = 0.5
-    max_force = 0.6
-    max_speed = 0.3
-    neighbor_refresh_rate = 0.5
+    mass: float = 1.0
+    body_radius: float = 0.5
+    max_force: float = 0.6
+    max_speed: float = 0.3
+    refresh_rate: float = 0.5
 
-    exponent_separate = 2
-    exponent_align = 3
-    exponent_cohere = 1
+    exponent_separate: int = 2
+    exponent_align: int = 3
+    exponent_cohere: int = 1
 
-    max_dist_separate = 4.0
-    max_dist_align = 6.0
-    max_dist_cohere = 100.0
+    max_dist_separate: float = 4.0
+    max_dist_align: float = 6.0
+    max_dist_cohere: float = 100.0
 
 
 @struct.dataclass
@@ -47,11 +49,11 @@ class State:
     # TODO(mshang): cache
 
 
-def blend(v_old: jax.Array, v_new: jax.Array, old_weight: float) -> jax.Array:
+def blend(v_old: ArrayLike, v_new: ArrayLike, old_weight: float) -> ArrayLike:
     return v_old * old_weight + v_new * (1 - old_weight)
 
 
-def unit_sigmoid(x: float) -> float:
+def unit_sigmoid(x: ArrayLike) -> ArrayLike:
 
     def logistic(x, k, L, x0):
         x = jp.maximum(x, -50)
@@ -77,7 +79,7 @@ def normalize_or_zero(v: jax.Array) -> jax.Array:
     return lax.cond(leng > 0, lambda: v / leng, lambda: v)
 
 
-def random_unit_vector(key: jax.Array) -> jax.Array:
+def random_unit_vector(key: jax.random.KeyArray) -> jax.Array:
     key, subkey = jax.random.split(key)
     theta = jax.random.uniform(key, (1, )) * 2 * math.pi
     z = jax.random.uniform(subkey, (1, )) * 2 - 1
@@ -85,7 +87,7 @@ def random_unit_vector(key: jax.Array) -> jax.Array:
     return jp.hstack([r * jp.cos(theta), r * jp.sin(theta), z])
 
 
-def init_boid(config: Config, key: jax.Array) -> State:
+def init_boid(config: Config, key: jax.random.KeyArray) -> State:
     key, subkey = jax.random.split(key)
     position = random_unit_vector(key) * config.sphere_radius / 2
     forward = random_unit_vector(subkey)
@@ -98,7 +100,7 @@ def init_boid(config: Config, key: jax.Array) -> State:
                  up_memory=jp.zeros_like(position))
 
 
-def init_state(config: Config, key: jax.Array) -> State:
+def init_state(config: Config, key: jax.random.KeyArray) -> State:
     init_boids = jax.vmap(functools.partial(init_boid, config))
     return init_boids(jax.random.split(key, config.boid_count))
 
@@ -138,9 +140,9 @@ def steer_to_align(position: jax.Array, forward: jax.Array,
         return normalize_or_zero(heading_offset) * weight
 
     direction = jp.sum(jax.vmap(align_force,
-                                 in_axes=(0, 0))(neighbor_positions,
-                                                 neighbor_forwards),
-                        axis=0)
+                                in_axes=(0, 0))(neighbor_positions,
+                                                neighbor_forwards),
+                       axis=0)
     return normalize_or_zero(direction)
 
 
