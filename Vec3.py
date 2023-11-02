@@ -79,10 +79,12 @@ class Vec3:
         return math.sqrt(self.length_squared())
     def length_squared(self):
         return self.dot(self)
+    def length_is_0(self):
+        return self.length_squared() == 0
     def normalize(self):
         return self / self.length()
     def normalize_or_0(self):
-        return self if self.length_squared() == 0 else self.normalize()
+        return self if self.length_is_0() else self.normalize()
         
     # Returns vector parallel to "this" but no longer than "max_length"
     def truncate(self, max_length):
@@ -211,7 +213,7 @@ class Vec3:
     #
     # Formulation from https://en.wikipedia.org/wiki/Line–sphere_intersection
     # particularly the two equations under the text "Note that in the specific
-    # case where is a unit vector..."
+    # case where U is a unit vector..."
     #
     # (Not certain where this should go. It is a "geometric utility" but
     # Utilities.py does not import Vec3. So it is here for now.)
@@ -236,10 +238,6 @@ class Vec3:
             # p2 = o + u * d2
             return p1
         else:
-            ####################################################################
-            # TODO 20231021 why no intersection with EvertedSphereObstacle?
-            # print('delta =', delta, ', (o - c).length() =', (o - c).length())
-            ####################################################################
             return None
 
     @staticmethod

@@ -116,7 +116,7 @@ class Draw:
         Draw.vis.add_geometry(Draw.axes, False)
 
         # Create everted containment sphere and add it to scene.
-        Draw.sphere_containment = Draw.make_everted_sphere(containment_radius+5,
+        Draw.sphere_containment = Draw.make_everted_sphere(containment_radius,
                                                            containment_center)
         Draw.vis.add_geometry(Draw.sphere_containment, False)
 
@@ -125,6 +125,9 @@ class Draw:
 
         # Keep track of time elapsed per frame.
         Draw.frame_start_time = time.time()
+
+        ctr = Draw.vis.get_view_control()
+        ctr.set_constant_z_far(containment_radius * 10)
 
     # Close visualizer after simulation run.
     @staticmethod
@@ -144,6 +147,10 @@ class Draw:
         # Update (GPU reload?) dynamic_triangle_mesh (boid "bodies", annotation)
         Draw.vis.update_geometry(Draw.dynamic_triangle_mesh)
         Draw.adjust_static_scene_objects() # move static objects for lookat hack
+
+    @staticmethod
+    def reset_timer():
+        Draw.frame_start_time = time.time()
 
     # Measure how much wall clock time has elapsed for this simulation step.
     @staticmethod

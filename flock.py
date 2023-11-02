@@ -66,7 +66,7 @@ class Flock:
         self.tracking_camera = False
         self.wrap_vs_avoid = False
         self.avoid_blend_mode = True   # obstacle avoid: blend vs hard switch
-        self.min_time_to_collide = 0.8 # react to predicted impact (seconds)
+        self.min_time_to_collide = 1.2 # react to predicted impact (seconds)
         self.fps = util.Blender()
         # give Flock a default list of obstacles
         self.obstacles = [EvertedSphereObstacle(self.sphere_radius,
@@ -175,7 +175,11 @@ class Flock:
             Draw.update_camera(self.selected_boid().position if
                             self.tracking_camera else Vec3())
             for boid in self.boids:
-                boid.draw()
+                color = None
+                if self.enable_annotation and self.tracking_camera and \
+                        boid in self.selected_boid().cached_nearest_neighbors:
+                    color = Vec3(0.0, 1.0, 0.0)
+                boid.draw(color=color)
 
     # Fly each boid in flock for one simulation step. Consists of two sequential
     # steps to avoid artifacts from order of boids. First a "sense/plan" phase
@@ -192,9 +196,6 @@ class Flock:
     def sphere_wrap_around(self):
         radius = self.sphere_radius
         center = self.sphere_center
-        # TODO totally ad hoc, catch any escapees in avoidance mode.
-        if not self.wrap_vs_avoid:
-            radius += 5
         for boid in self.boids:
             bp = boid.position
             distance_from_center = (bp - center).length()
@@ -276,6 +277,8 @@ class Flock:
     # Toggle simulation pause mode.
     def toggle_paused_mode(self):
         self = Flock.convert_to_flock(self)
+        if self.simulation_paused:
+            Draw.reset_timer()
         self.simulation_paused = not self.simulation_paused
 
     # Take single simulation step then enter pause mode.

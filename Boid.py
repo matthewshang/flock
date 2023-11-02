@@ -55,7 +55,7 @@ class Boid(Agent):
         self.weight_separate = 1.00
         self.weight_align    = 0.30
         self.weight_cohere   = 0.60
-        self.weight_avoid    = 0.80
+        self.weight_avoid    = 0.90
         self.max_dist_separate = 4
         self.max_dist_align    = 6
         self.max_dist_cohere   = 100  # TODO 20231017 should this be ∞ or
@@ -154,8 +154,7 @@ class Boid(Agent):
         weight = 0
         avoidance = Vec3()
         if not self.flock.wrap_vs_avoid:
-            collisions = self.predict_future_collisions()
-            if collisions and time_step > 0:
+            if time_step > 0 and (collisions := self.predict_future_collisions(time_step)):
                 first_collision = collisions[0]
                 poi = first_collision.point_of_impact
                 normal = first_collision.normal_at_poi
@@ -171,39 +170,32 @@ class Boid(Agent):
                     weight = util.unit_sigmoid_on_01(d)
                 else:
                     weight = 1 if near else 0
-                self.avoid_obstacle_annotation(poi, near, weight)
+                self.avoid_obstacle_annotation(poi, weight)
             if weight < 0.1:
-                avoidance = self.prototype_fly_away_from_obstacle()
+                avoidance = self.fly_away_from_obstacles()
                 weight = 1
         return avoidance * weight
 
-    # TODO 20231014 prototype_fly_away_from_obstacle
-    # Prototype of non-predictive "repulsion" from "large" obstacles like walls.
-    # Here the default EvertedSphereObstacle is assumed.
-    def prototype_fly_away_from_obstacle(self):
-        avoidance = Vec3()
+    # Computes static obstacle avoidance: steering AWAY from nearby obstacle.
+    # Non-predictive "repulsion" from "large" obstacles like walls.
+    # TODO currently assumes exactly one obstacle exists
+    def fly_away_from_obstacles(self):
         p = self.position
-        r = self.flock.sphere_radius
-        c = self.flock.sphere_center
-        offset_to_sphere_center = c - p
-        distance_to_sphere_center = offset_to_sphere_center.length()
-        dist_from_wall = r - distance_to_sphere_center
-        if dist_from_wall < r * 0.7:  # outer 75% of sphere
-            normal = offset_to_sphere_center / distance_to_sphere_center
-            if normal.dot(self.forward) < 0.9:
-                weight = (distance_to_sphere_center / r) ** 3
-                avoidance = normal * weight
-                # Draw.add_line_segment(p, p + avoidance, Vec3(1, 1, 0))
+        f = self.forward
+        max_distance = self.body_radius * 10  # six body diameters
+        obstacle = self.flock.obstacles[0] # TODO assumes only one
+        avoidance = obstacle.fly_away(p, f, max_distance)
+        weight = avoidance.length()
+        self.avoid_obstacle_annotation(obstacle.nearest_point(p), weight)
         return avoidance
 
     # Draw a ray from Boid to its point of impact. Magenta for strong avoidance,
     # shades to background gray (85%) for gentle avoidance.
-    def avoid_obstacle_annotation(self, poi, near, weight):
-        # magenta = Vec3(0.9, 0.7, 0.9) # old color before 20230910
-        magenta = Vec3(1, 0, 1)
-        gray85 = Vec3(0.85, 0.85, 0.85)
-        color = util.interpolate(weight, gray85, magenta)
-        if weight > 0.1:
+    def avoid_obstacle_annotation(self, poi, weight):
+        if self.should_annotate() and weight > 0.01:
+            magenta = Vec3(1, 0, 1)
+            gray85 = Vec3(0.85, 0.85, 0.85)
+            color = util.interpolate(weight, gray85, magenta)
             Draw.add_line_segment(self.position, poi, color)
 
     # Wander aimlessly via slowly varying steering force. Currently unused.
@@ -270,17 +262,23 @@ class Boid(Agent):
         return self.steer_memory.blend(steer, 0.6) # Ad hoc smoothness param.
 
     # Draw this Boid's “body” -- currently an irregular tetrahedron.
-    def draw(self):
+    def draw(self, color=None):
+        if color is None:
+            color = self.color
         draw_boid(self.position, self.forward, self.side, 
-                  self.up, self.body_radius, self.color)
+                  self.up, self.body_radius, color)
+
+    def should_annotate(self):
+        return (self.flock.enable_annotation and
+                self.flock.tracking_camera and
+                (self.flock.selected_boid().position - self.position).length() < 3)
 
     # Draw optional annotation of this Boid's current steering forces
     def annotation(self, separation, alignment, cohesion, avoidance, combined):
         center = self.position
         def relative_force_annotation(offset, color):
             Draw.add_line_segment(center, center + offset, color)
-        if (self.flock.enable_annotation and self.flock.tracking_camera and
-                   (self.flock.selected_boid().position - center).length() < 3):
+        if self.should_annotate():
             relative_force_annotation(separation, Vec3(1, 0, 0))
             relative_force_annotation(alignment,  Vec3(0, 1, 0))
             relative_force_annotation(cohesion,   Vec3(0, 0, 1))
@@ -296,23 +294,13 @@ class Boid(Agent):
         return self.up_memory.value
 
     # Returns a list of future collisions sorted by time, with soonest first.
-    def predict_future_collisions(self):
+    def predict_future_collisions(self, time_step):
         collisions = []
         for obstacle in self.flock.obstacles:
             point_of_impact = obstacle.ray_intersection(self.position, self.forward)
-            #
-            # TODO 20230903 Quite occasionally, this seems to return None.
-            #               Need to figure out why.
-            #
-            # TODO 20231021 why no intersection with EvertedSphereObstacle?
-            #    In Vec3.ray_sphere_intersection() boid positions are clearly
-            #    outside the default EvertedSphereObstacle in (see commented-out
-            #    print() in Vec3.ray_sphere_intersection()). Which seems at odds
-            #    with zero Boid.total_avoid_fail, see Flock.sphere_wrap_around()
-            #
             if point_of_impact:
                 dist_to_collision = (point_of_impact - self.position).length()
-                time_to_collision = dist_to_collision / self.speed
+                time_to_collision = dist_to_collision / (self.speed / time_step)
                 normal_at_poi = obstacle.normal_at_poi(point_of_impact)
                 collisions.append(Collision(time_to_collision,
                                             dist_to_collision,
