@@ -214,3 +214,15 @@ def next_state(params: Params, config: Config, time_step: float,
     step = jax.vmap(functools.partial(steer, state, time_step, params, config),
                     in_axes=(0, 0))
     return step(state, jp.arange(config.boid_count))
+
+def pairwise_distances(state: State) -> jax.Array:
+    positions = state.position
+    n_agents = positions.shape[0]
+    idx = jp.triu_indices(n_agents, k=1)
+    return jp.linalg.norm(positions[idx[0]] - positions[idx[1]], axis=-1)
+
+def avg_sep(state: State) -> float:
+    return jp.mean(pairwise_distances(state))
+
+def min_sep(state: State) -> float:
+    return jp.min(pairwise_distances(state))

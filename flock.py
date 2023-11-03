@@ -107,7 +107,7 @@ class Flock:
                 if not self.simulation_paused:
                     Draw.measure_frame_duration()
                 self.update_fps()
-                print(self.fps.value)
+                # print(self.fps.value)
         Draw.close_visualizer()
         print('Exit at step:', Draw.frame_counter)
 
@@ -411,5 +411,5 @@ if __name__ == "__main__":
 #    Flock(max_simulation_steps=200, fixed_time_step=True, seed=438538457).run()
 
     # Flock().run()
-    Flock(use_jax=True).run()
+    Flock(boid_count=100, use_jax=True).run()
 #    Flock(2).run()
