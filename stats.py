@@ -14,7 +14,10 @@ def time_average_with_history(
         return next_state, J_fn(next_state)
 
     _, J = jax.lax.scan(step, initial_state, None, n_steps)
-    return jnp.cumsum(J) / jnp.arange(1, n_steps + 1)
+    cumsum = jnp.cumsum(J, axis=0)
+    dims = (-1, 1) if J.ndim > 1 else -1
+    correction = jnp.arange(1, n_steps + 1).reshape(dims)
+    return cumsum / correction
 
 def time_average(initial_state, next_fn, n_steps, J_fn):
     def step(carry, _):
