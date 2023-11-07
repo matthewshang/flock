@@ -33,6 +33,10 @@ import jax
 import jax_flock as jf
 import jax.numpy as jnp
 from boid_draw import draw_boid
+############################################################################
+# TODO 20231105 PlaneObstacle
+from obstacle import PlaneObstacle
+############################################################################
 
 class Flock:
 
@@ -68,9 +72,21 @@ class Flock:
         self.avoid_blend_mode = True   # obstacle avoid: blend vs hard switch
         self.min_time_to_collide = 1.2 # react to predicted impact (seconds)
         self.fps = util.Blender()
+        ########################################################################
+        # TODO 20231105 PlaneObstacle
+        
+#        # give Flock a default list of obstacles
+#        self.obstacles = [EvertedSphereObstacle(self.sphere_radius,
+#                                                self.sphere_center)]
+
         # give Flock a default list of obstacles
-        self.obstacles = [EvertedSphereObstacle(self.sphere_radius,
-                                                self.sphere_center)]
+        eso = EvertedSphereObstacle(self.sphere_radius, self.sphere_center)
+        po = PlaneObstacle()
+#        self.obstacles = [eso]
+#        self.obstacles = [po]
+        self.obstacles = [po, eso]
+        ########################################################################
+
         # If there is ever a need to have multiple Flock instances at the same
         # time, these steps should be reconsidered:
         self.seed = seed
@@ -181,6 +197,11 @@ class Flock:
                     color = Vec3(0.0, 1.0, 0.0)
                 boid.draw(color=color)
 
+    ########################################################################
+    # TODO 20231106 flies through PlaneObstacle
+    plane_obstacle_fail = 0
+    ########################################################################
+
     # Fly each boid in flock for one simulation step. Consists of two sequential
     # steps to avoid artifacts from order of boids. First a "sense/plan" phase
     # which computes the desired steering based on current state. Then an "act"
@@ -188,8 +209,51 @@ class Flock:
     def fly_flock(self, time_step):
         for boid in self.boids:
             boid.plan_next_steer(time_step)
+
+        ########################################################################
+        # TODO 20231106 flies through PlaneObstacle
+        
+#        for boid in self.boids:
+#            boid.apply_next_steer(time_step)
+
+#        def diff_sign(a, b):
+#            return (a > 0 and b < 0) or (a < 0 and b > 0)
+#        for boid in self.boids:
+#            before = boid.position.y
+#            boid.apply_next_steer(time_step)
+#            if boid.position.length() < self.sphere_radius * 0.8:
+#                if diff_sign(before, boid.position.y):
+#                    self.plane_obstacle_fail += 1
+#                    print('Boid cross PlaneObstacle:', self.plane_obstacle_fail)
+
+        def diff_sign(a, b):
+            return (a > 0 and b < 0) or (a < 0 and b > 0)
         for boid in self.boids:
+            before = boid.position.y
             boid.apply_next_steer(time_step)
+#            if boid.position.length() < self.sphere_radius * 0.8:
+            if diff_sign(before, boid.position.y):
+                self.plane_obstacle_fail += 1
+                print('Boid cross PlaneObstacle:', self.plane_obstacle_fail)
+        ########################################################################
+
+
+        ########################################################################
+        # TODO 20231105 PlaneObstacle
+        
+#        plane = PlaneObstacle()
+#        # plane = PlaneObstacle(normal=Vec3(1,0,0), center=Vec3(30,0,0))
+#        boid = self.selected_boid()
+#        nearest_point = plane.nearest_point(boid.position)
+#        i = plane.ray_intersection(boid.position, boid.forward)
+#        if i:
+#            Draw.add_line_segment(boid.position, i, Vec3(1, 1, 1))
+#        norm_poi = plane.normal_at_poi(nearest_point, boid.position)
+#        Draw.add_line_segment(nearest_point,
+#                              nearest_point + norm_poi * 5,
+#                              Vec3(1, 0, 0))
+
+        ########################################################################
 
     # When a Boid gets more than "radius" from the origin, teleport it to the
     # other side of the world, just inside of its antipodal point.

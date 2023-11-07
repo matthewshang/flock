@@ -55,7 +55,12 @@ class Boid(Agent):
         self.weight_separate = 1.00
         self.weight_align    = 0.30
         self.weight_cohere   = 0.60
-        self.weight_avoid    = 0.90
+        ########################################################################
+        # TODO 20231106 flies through PlaneObstacle
+#        self.weight_avoid    = 0.90
+#        self.weight_avoid    = 1.10
+        self.weight_avoid    = 2
+        ########################################################################
         self.max_dist_separate = 4
         self.max_dist_align    = 6
         self.max_dist_cohere   = 100  # TODO 20231017 should this be ∞ or
@@ -75,6 +80,9 @@ class Boid(Agent):
         self.angle_align    = -1     # 180°
         self.angle_cohere   = -1     # 180°
         ########################################################################
+
+        self.annote_avoid_poi = Vec3()  # This might be too elaborate: two vals
+        self.annote_avoid_weight = 0    # per boid just for avoid annotation.
 
     # Determine and store desired steering for this simulation step
     def plan_next_steer(self, time_step):
@@ -149,54 +157,120 @@ class Boid(Agent):
 
     ############################################################################
 
-    # Steering force component to avoid obstacles.
+
+
+    ############################################################################
+    # TODO 20231106 flies through PlaneObstacle
+
+    # Steering force to avoid obstacles. Combines "predictive" avoidance (I will
+    # collide with an obstacle within Flock.min_time_to_collide seconds) with
+    # "static" avoidance (I should move away from this obstacle, for everted
+    # containment obstacles)
     def steer_to_avoid(self, time_step):
+        return (Vec3() if self.flock.wrap_vs_avoid else
+                Vec3.max(self.steer_for_predictive_avoidance(time_step),
+                         self.fly_away_from_obstacles()))
+
+
+#    # Steering force to avoid obstacles. Combines "predictive" avoidance (I will
+#    # collide with an obstacle within Flock.min_time_to_collide seconds) with
+#    # "static" avoidance (I should move away from this obstacle, for everted
+#    # containment obstacles)
+#    def steer_to_avoid(self, time_step):
+#        avoidance = Vec3()
+#        static = self.fly_away_from_obstacles()
+#        predictive = self.steer_for_predictive_avoidance(time_step)
+#        if not self.flock.wrap_vs_avoid:
+#            if predictive.length() > 0.1:
+#                avoidance = predictive
+#            else:
+#                avoidance = static
+#        return avoidance
+
+    ############################################################################
+
+    # Steering force component for predictive obstacles avoidance.
+    def steer_for_predictive_avoidance(self, time_step):
         weight = 0
         avoidance = Vec3()
-        if not self.flock.wrap_vs_avoid:
-            if time_step > 0 and (collisions := self.predict_future_collisions(time_step)):
-                first_collision = collisions[0]
-                poi = first_collision.point_of_impact
-                normal = first_collision.normal_at_poi
-                pure_steering = normal.perpendicular_component(self.forward)
-                avoidance = pure_steering.normalize()
-                min_dist = self.speed * self.flock.min_time_to_collide / time_step
-                # Near enough to require avoidance steering?
-                near = min_dist > first_collision.dist_to_collision
-                if self.flock.avoid_blend_mode:
-                    # Smooth weight transition from 80% to 120% of min dist.
-                    d = util.remap_interval(first_collision.dist_to_collision,
-                                            min_dist * 0.8, min_dist * 1.2, 1, 0)
-                    weight = util.unit_sigmoid_on_01(d)
-                else:
-                    weight = 1 if near else 0
-                self.avoid_obstacle_annotation(poi, weight)
-            if weight < 0.1:
-                avoidance = self.fly_away_from_obstacles()
-                weight = 1
+        if time_step > 0 and (collisions := self.predict_future_collisions(time_step)):
+            first_collision = collisions[0]
+            poi = first_collision.point_of_impact
+            normal = first_collision.normal_at_poi
+            pure_steering = normal.perpendicular_component(self.forward)
+            avoidance = pure_steering.normalize()
+            min_dist = self.speed * self.flock.min_time_to_collide / time_step
+            # Near enough to require avoidance steering?
+            near = min_dist > first_collision.dist_to_collision
+            if self.flock.avoid_blend_mode:
+                # Smooth weight transition from 80% to 120% of min dist.
+                d = util.remap_interval(first_collision.dist_to_collision,
+                                        min_dist * 0.8, min_dist * 1.2, 1, 0)
+                weight = util.unit_sigmoid_on_01(d)
+            else:
+                weight = 1 if near else 0
+            self.avoid_obstacle_annotation(0, poi, weight)
         return avoidance * weight
+
+    ############################################################################
+    # TODO 20231106 flies through PlaneObstacle
+
+#    # Computes static obstacle avoidance: steering AWAY from nearby obstacle.
+#    # Non-predictive "repulsion" from "large" obstacles like walls.
+#    # TODO currently assumes exactly one obstacle exists
+#    def fly_away_from_obstacles(self):
+#        p = self.position
+#        f = self.forward
+#        max_distance = self.body_radius * 10  # six body diameters
+#        obstacle = self.flock.obstacles[0] # TODO assumes only one
+#        avoidance = obstacle.fly_away(p, f, max_distance)
+#        weight = avoidance.length()
+#        self.avoid_obstacle_annotation(1, obstacle.nearest_point(p), weight)
+#        return avoidance
 
     # Computes static obstacle avoidance: steering AWAY from nearby obstacle.
     # Non-predictive "repulsion" from "large" obstacles like walls.
     # TODO currently assumes exactly one obstacle exists
     def fly_away_from_obstacles(self):
+        avoidance = Vec3()
+        
         p = self.position
         f = self.forward
         max_distance = self.body_radius * 10  # six body diameters
-        obstacle = self.flock.obstacles[0] # TODO assumes only one
-        avoidance = obstacle.fly_away(p, f, max_distance)
-        weight = avoidance.length()
-        self.avoid_obstacle_annotation(obstacle.nearest_point(p), weight)
+        
+        for obstacle in self.flock.obstacles:
+#            obstacle = self.flock.obstacles[0] # TODO assumes only one
+#            avoidance = obstacle.fly_away(p, f, max_distance)
+            oa = obstacle.fly_away(p, f, max_distance)
+            weight = oa.length()
+            self.avoid_obstacle_annotation(1, obstacle.nearest_point(p), weight)
+            avoidance += oa
+
+
         return avoidance
 
-    # Draw a ray from Boid to its point of impact. Magenta for strong avoidance,
-    # shades to background gray (85%) for gentle avoidance.
-    def avoid_obstacle_annotation(self, poi, weight):
+    ############################################################################
+
+    # Draw a ray from Boid to point of impact, or nearest point for fly-away.
+    # Magenta for strong avoidance, shades to background gray (85%) for gentle
+    # avoidance. "Phase" used to show strongest avodiance: predictive vs static.
+    def avoid_obstacle_annotation(self, phase, poi, weight):
         if self.should_annotate() and weight > 0.01:
-            magenta = Vec3(1, 0, 1)
-            gray85 = Vec3(0.85, 0.85, 0.85)
-            color = util.interpolate(weight, gray85, magenta)
-            Draw.add_line_segment(self.position, poi, color)
+            # For predictive avoidance (phase 0) just store poi and weight.
+            if phase == 0:
+                self.annote_avoid_poi = poi
+                self.annote_avoid_weight = weight
+            # For static avoidance (phase 1) use values for max weight.
+            if phase == 1:
+                if weight < self.annote_avoid_weight:
+                    poi = self.annote_avoid_poi
+                    weight = self.annote_avoid_weight
+                Draw.add_line_segment(self.position, poi,
+                                      # Interp color between gray and magenta.
+                                      util.interpolate(weight,
+                                                       Vec3(0.85, 0.85, 0.85),
+                                                       Vec3(1, 0, 1)))
+
 
     # Wander aimlessly via slowly varying steering force. Currently unused.
     def steer_to_wander(self, rs):
@@ -301,7 +375,11 @@ class Boid(Agent):
             if point_of_impact:
                 dist_to_collision = (point_of_impact - self.position).length()
                 time_to_collision = dist_to_collision / (self.speed / time_step)
-                normal_at_poi = obstacle.normal_at_poi(point_of_impact)
+                ################################################################
+                # TODO 20231105 PlaneObstacle
+#                normal_at_poi = obstacle.normal_at_poi(point_of_impact)
+                normal_at_poi = obstacle.normal_at_poi(point_of_impact, self.position)
+                ################################################################
                 collisions.append(Collision(time_to_collision,
                                             dist_to_collision,
                                             point_of_impact,
