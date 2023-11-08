@@ -36,3 +36,10 @@ def trajectory(initial_state, next_fn, n_steps, pos_fn):
     
     _, pos = jax.lax.scan(step, initial_state, None, n_steps)
     return pos
+
+@functools.partial(jax.jit, static_argnames=['next_fn', 'n_steps'])
+def advance(initial_state, next_fn, n_steps):
+    def step(state, _):
+        return next_fn(state), None
+    
+    return jax.lax.scan(step, initial_state, None, n_steps)[0]
